@@ -8,4 +8,4 @@ Report in: https://albamrt.github.io/NMDA_fMRI_behavior/
 4. If wanted, upload the results back to GitHub.
 
 
-* The file 'behavior.csv' can be created by using the script 'concat_behavior.py' on the cluster.
+\* The file 'behavior.csv' can be created by using the script 'concat_behavior.py' on the cluster.
