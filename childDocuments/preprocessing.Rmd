@@ -14,9 +14,9 @@ options(knitr.kable.NA = '')
 source('helpers/helpers.R')
 source('helpers/settings.R')
 beh <- read.csv("data/behaviour.csv", sep=";")
-treatment <- read.csv("data/NMDAEventsProjecteAj-Treatment_DATA.csv", sep=";") 
+treatment <- read.csv("data/NMDAEventsProjecteAj-treatment.csv", sep=";") 
 # REDcap treatment data
-NMDAEvents <- read.csv("data/NMDAEvents.csv", sep = ";") # REDcap data
+NMDAEvents <- read.csv("data/NMDAEventsProjecteAj-demo.csv", sep = ";") # REDcap info demo data
 ```
 
 ```{r}
