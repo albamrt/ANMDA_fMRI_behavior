@@ -1,0 +1,494 @@
+---
+title: "Trials with low response times"
+author: "Alba Morató"
+date: "25/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+source('helpers/helpers.R')
+source('helpers/settings.R')
+data <- read.csv("data/behaviour.csv", sep=";")
+```
+
+## Original data
+
+```{r data}
+# Add continuous time variable (instead of session):
+data$time <- recode(data$session, S1 = 0, S2 = 3, S3 = 6, S4 = 12, S5 = 24) 
+
+# Label data:
+label(data$trial) = "Trial number"
+label(data$block) = "Block number"
+label(data$run) = "Run"
+label(data$type) = "Memory or non-memory trial"
+label(data$S_Angle) = "Stimulus angle (deg)"
+label(data$P_Angle) = "Probe angle (deg)"
+label(data$R_Angle) = "Response angle (deg)"
+label(data$RT) = "Response time (s)"
+label(data$MT) = "MT"
+label(data$ts_b) = "Beginning timestamp"
+label(data$ts_p) = "Probe timestamp"
+label(data$ts_d) = "delay timestamp"
+label(data$ts_r) = "Response timestamp"
+label(data$ts_m) = "Mask timestamp"
+label(data$ts_e) = "End timestamp"
+label(data$m_angle) = "m_angle"
+label(data$m_clock) = "_clock"
+label(data$S_rad) = "Stimulus angle (rad)"
+label(data$P_rad) = "Probe angle (rad)"
+label(data$R_rad) = "Response angle (rad)"
+label(data$prevstim_rad) = "Previous stimulus angle (rad)"
+label(data$prevresp_rad) = "Previous response angle (rad)"
+label(data$prevprob_rad) = "Previous probe angle(rad)"
+label(data$prevmem) = "Previous trial is memory?"
+label(data$futurestim_rad) = "Next stimulus angle (rad)"
+label(data$futureresp_rad) = "Next response angle (rad)"
+label(data$subject) = "Subject"
+label(data$session) = "Session"
+label(data$group) = 'Group'
+label(data$error) = "Error (rad)"
+label(data$errorprevstim) = "Previous stim error relative to current stim"
+label(data$errorprevresp) = "Previous resp error relative to current stim"
+label(data$errorprevprobe) = "Previous probe error relative to current stim"
+label(data$diffstim) = "Difference current-previous stim (rad)"
+label(data$diffresp) = "Difference current stim-previous resp (rad)"
+label(data$difffuture) = "Difference current-next stim (rad)"
+label(data$difffutureresp) = "Difference current stim-next resp (rad)"
+label(data$diffprevprob) = "Difference current stim-previous probe (rad)"
+label(data$time) = "Time"
+
+# Remove variables:
+data$m_angle <- NULL
+data$m_clock <- NULL
+
+# exclude session 5:
+data <- data[data$session != 'S5',]
+
+# time from months to years:
+data$time <- data$time/12
+
+# Convert variables to factors:
+data$session <- as.factor(data$session)
+data$session <- droplevels(data$session)
+data$group <- as.factor(data$group)
+data$subject <- as.factor(data$subject)
+
+# Relevel factors:
+data$group <- relevel(data$group, ref = 'C')
+
+# Keep only memory trials:
+data = data[data$type == 1, ]
+
+# time from months to days
+# data$time <- data$time*30
+```
+
+
+```{r summary}
+groupedData <- data %>%
+  group_by(group, session) %>%
+  nest() %>%
+  mutate(n = map(.x = data, .f = ~ n_distinct(.x$subject)),
+         n_trials = map(.x = data, .f = ~ nrow(.x))) %>%
+  unnest(c(n, n_trials))
+
+groupedData %>%
+  select(c(session, group, n)) %>%
+  spread(session, n) %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Summary of number of subjects by group and session.',
+        align = c('l', rep('c', length(unique(data$session)) + 1)), 
+        col.names = c(label(data$group), levels(data$session))) %>%
+  kable_styling(position = "float_left",
+              bootstrap_options = "striped", full_width = F) %>%
+  column_spec(1:(length(unique(data$session)) + 1), "2cm") 
+
+
+groupedData %>%
+  select(c(session, group, n_trials)) %>%
+  spread(session, n_trials) %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Summary of number of trials by group and session.',
+        align = c('l', rep('c', length(unique(data$session)) + 1)),
+                col.names = c(label(data$group), levels(data$session))) %>%
+  kable_styling(position = "center",
+                bootstrap_options = "striped", full_width = F) %>%
+  column_spec(1:(length(unique(data$session)) + 1), "2cm") 
+```
+
+## Descriptive of the raw data
+
+```{r RawPlots, fig.cap = 'Summary of the main variables', fig.show='hold', out.width = '33%', fig.ncol = 3, fig.align='center'}
+summaryHist(data, "S_rad")
+summaryHist(data, "P_rad")
+summaryHist(data, "R_rad")
+summaryHist(data, "error")
+summaryHist(data, "RT")
+```
+
+Let us start by plotting trials with smaller response times more in detail:
+```{r}
+hist(data$RT[data$RT<1], border = 'white', xlab = 'Response Time', main = '')
+hist(data$RT[data$RT<0.5], border = 'white', xlab = 'Response Time', main = '')
+```
+
+Let us check trials with response time < 0.25.
+
+## Trials with response time < 0.25
+
+
+Let us check how these trials distribute among subjects:
+```{r}
+low_RT <- data %>% 
+  group_by(subject, session) %>%
+  summarise(low_RT = sum(RT<0.25), trials = n(), prop_low_RT = sum(RT<0.25)/n())
+
+kable(low_RT, digits = digits, booktabs = TRUE, escape = FALSE,
+      caption = 'Proportion of trials with response time < 0.25.',
+      col.names = c(label(data$subject), label(data$session), 
+                    "Number of trials with RT<0.25", "Total number of trials", 
+                    "Prop of trials with RT<0.25")) %>%
+  kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+```
+
+```{r}
+low_RT$group <- as.factor(substr(low_RT$subject, 1, 1))
+
+ggplot(data = low_RT, aes(x = session, y = prop_low_RT, color = group)) +
+  geom_point(position=position_jitter(h = 0, w = 0.15)) + 
+  scale_color_manual(values = as.vector(colors))
+```
+
+```{r}
+ggplot(data = low_RT, aes(x = prop_low_RT, fill = group)) +
+  geom_histogram() + 
+  facet_wrap(vars(group)) +
+  scale_fill_manual(values = as.vector(colors))
+```
+
+Are there differences in the proportion of trials with RT $\approx 0$ between subjects?
+```{r echo = TRUE}
+mod <- glm(prop_low_RT ~ group, data = low_RT, family = binomial)
+summary(mod)
+
+mod2 <- glm(prop_low_RT ~ group*session, data = low_RT, family = binomial)
+summary(mod2)
+```
+
+It seems the proportion of trials with RT $\approx 0$ is not associated with the `group` they belong to.
+
+```{r}
+data = data[data$RT<0.25,]
+```
+
+Here we can see all the subject's error distribution by session (just taking into account those trials). 
+```{r fig.cap = 'Error distribution by subject and session', fig.height = 40, fig.width = 8}
+ggplot(data, aes(x = error, fill = group)) +
+  geom_histogram(aes(y =..density..), bins = 30,
+                 position = 'identity', alpha = 0.4) +
+  scale_fill_manual(values = as.vector(colors)) +
+  scale_color_manual(values = as.vector(colors)) +
+  labs(x = Hmisc::label(data$error), fill = Hmisc::label(data$group))+
+  facet_wrap(~ subject:session, ncol = 4) 
+```
+
+
+```{r summary2}
+groupedData <- data %>%
+  group_by(group, session) %>%
+  nest() %>%
+  mutate(n = map(.x = data, .f = ~ n_distinct(.x$subject)),
+         n_trials = map(.x = data, .f = ~ nrow(.x))) %>%
+  unnest(c(n, n_trials))
+
+
+groupedData %>%
+  select(c(session, group, n_trials)) %>%
+  spread(session, n_trials) %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Summary of number of trials by group and session.',
+        align = c('l', rep('c', length(unique(data$session)) + 1)),
+                col.names = c(label(data$group), levels(data$session))) %>%
+  kable_styling(position = "center",
+                bootstrap_options = "striped", full_width = F) %>%
+  column_spec(1:(length(unique(data$session)) + 1), "2cm") 
+```
+
+## Bias and precision
+
+```{r}
+groupedSubjSes <- data %>%
+  group_by(session, subject) %>%
+  nest() %>%
+  mutate(JV10e = map(.x = data, .f = ~bays_2009_error(X = .x$R_rad, Tg = .x$S_rad)))%>%
+  mutate(precision = map_dbl(JV10e, 1), bias = map_dbl(JV10e, 2), 
+         group = substr(subject, 1,1), 
+         time = unlist(map(data, function(x) unique(x['time'])))) %>%
+  select(-c("JV10e")) 
+
+groupedData <- groupedData %>%
+  mutate(JV10e = map(.x = data, .f = ~bays_2009_error(X = .x$R_rad, Tg = .x$S_rad)))%>%
+  mutate(precision = map_dbl(JV10e, 1), bias = map_dbl(JV10e, 2)) %>%
+  select(-c("JV10e"))
+
+aux <- unlist(lapply(levels(data$session), function(x) setNames(2,x)))
+aux0 <- apply(expand.grid(c("precision", "bias"), levels(data$session)), 
+              1, paste, collapse=".")
+
+groupedData %>%
+  select(group, session, precision, bias) %>%
+  as.data.frame() %>%
+  reshape(idvar = 'group', timevar = 'session', direction = "wide",
+          v.names = c('precision', 'bias')) %>%
+  select(c("group", all_of(aux0))) %>%
+  kable(col.names = c(Hmisc::label(data$group), 
+                      rep(c("Precision", "Bias"), length(levels(data$session)))), 
+        row.names = FALSE, booktabs = TRUE, escape = FALSE,
+        caption = "Bias and precision by group and session.",
+        digits = digits) %>%
+  add_header_above(c(" " = 1, aux)) %>%
+  kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+```
+
+```{r fig.cap = 'Bias and precision by group and session.', fig.show='hold', out.width = '49%'}
+groupedSubjSes %>%
+  ggplot(aes(x = time, y = abs(bias), color = group, group = group)) +
+  geom_point(position= position_jitterdodge(jitter.width = 0.01, dodge.width = 0.05), alpha = 0.2) +
+  stat_summary(fun.data = "mean_cl_boot", show.legend = FALSE,
+               position = position_dodge(width=0.05)) +
+  stat_summary(fun = mean, geom = "line", size = 1, show.legend = FALSE,
+               position=position_dodge(width=0.05)) +
+    scale_color_manual(values=colors) +
+  labs(x = Hmisc::label(data$time), y = "Absolute bias", 
+       color = Hmisc::label(data$group), group = Hmisc::label(data$group))
+
+groupedSubjSes %>%
+  ggplot(aes(x = time, y = precision, color = group, group = group)) +
+  geom_point(position= position_jitterdodge(jitter.width = 0.01, dodge.width = 0.05), alpha = 0.2) +
+  stat_summary(fun.data = "mean_cl_boot",
+               position=position_dodge(width=0.05)) +
+  stat_summary(fun = mean, geom = "line",  size = 1, show.legend = FALSE,
+               position=position_dodge(width=0.05)) +
+    scale_color_manual(values=colors) +
+  theme(legend.position=c(.9, .8)) +
+  labs(x = Hmisc::label(data$time), y = "Precision", color = Hmisc::label(data$group), 
+       group = Hmisc::label(data$group)) 
+```
+
+
+### Bias
+```{r, fig.align='center', fig.height = 3, fig.cap = 'Bias by subject and group through time'}
+groupedSubjSes %>%
+  ggplot(aes(x = time, y = abs(bias), color = group, group = subject)) +
+  geom_line(alpha = 0.3, show.legend = FALSE) +
+  stat_summary(fun.data = "mean_cl_boot", show.legend = FALSE,
+               position = position_dodge(width = 0.05), aes(group = group)) +
+  stat_summary(fun = mean, geom = "line", size = 1, show.legend = FALSE,
+               position = position_dodge(width = 0.05), aes(group = group)) +
+  scale_color_manual(values = colors) +
+  theme_minimal(base_size = 15) +
+  labs(x = Hmisc::label(data$time), y = "Absolute bias", color = Hmisc::label(data$group)) +
+  facet_wrap(~ group)
+```
+
+#### Modelling bias
+
+##### Time as a continuous variable
+```{r eval = FALSE}
+mod0 <- lme(abs(bias) ~ group * time, random = ~(1+time)|subject, data = groupedSubjSes)
+mod1 <- lme(abs(bias) ~ group * time, random = ~(1)|subject, data = groupedSubjSes)
+mod2 <- lm(abs(bias) ~ group * session, 
+           data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),])
+mod3 <- lme(abs(bias) ~ group * session, random = ~1|subject, 
+            data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),])
+mod4 <- lme(abs(bias) ~ group * session, random = ~(1+session)|subject,
+            data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),])
+
+mod0$sigma # best with continous
+mod1$sigma
+summary(mod2)$sigma
+mod3$sigma
+mod4$sigma # best with categorical (best model)
+```
+
+
+```{r }
+tryCatch(
+  summary(lme(abs(bias) ~ group * time, random = ~(1+time)|subject, data = groupedSubjSes))$tTable %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Linear mixed-effects model where the response is bias and regressors are group, time, its interaction and subject as a random factor.') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F),
+  error = function(i) {
+      summary(lm(abs(bias) ~ group * time, data = groupedSubjSes))$coefficients %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Linear model where the response is bias and regressors are group, time, its interaction and subject as a random factor.') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+  })
+
+tryCatch(
+  anova(lme(abs(bias) ~ group * time, random = ~(1+group)|subject, data = groupedSubjSes)) %>%
+    kable(digits = digits, booktabs = TRUE, escape = FALSE,
+          caption = 'Anova of a linear mixed-effects model where the response is bias and regressors are group, time, its interaction and subject as a random factor.') %>%
+      kable_styling(latex_options = "HOLD_position", 
+                  bootstrap_options = "striped", full_width = F),
+  error = function(i) {
+      anova(lm(abs(bias) ~ group * time, data = groupedSubjSes)) %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Anova of the linear model where the response is bias and regressors are group, time, its interaction and subject as a random factor..') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+  })
+```
+
+##### Time as categorical (session)
+
+```{r }
+tryCatch(
+  summary(lme(abs(bias) ~ group * session, random = ~(1+session)|subject,
+              data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),]))$tTable %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Linear mixed-effects model where the response is bias and regressors are group, session, its interaction and subject as a random factor..') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F),
+  error = function(i) {
+      summary(lm(abs(bias) ~ group * session, 
+          data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),]))$coefficients %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Linear model where the response is bias and regressors are group, session, its interaction and subject as a random factor.') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+  })
+
+tryCatch(
+  anova(lme(abs(bias) ~ group * session, random = ~(1+session)|subject,
+            data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),])) %>%
+    kable(digits = digits, booktabs = TRUE, escape = FALSE,
+          caption = 'Anova of a linear mixed-effects model where the response is bias and regressors are group, session, its interaction and subject as a random factor..') %>%
+      kable_styling(latex_options = "HOLD_position", 
+                  bootstrap_options = "striped", full_width = F),
+  error = function(i) {
+      anova(lm(abs(bias) ~ group * session, 
+               data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),])) %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Anova of the linear model where the response is bias and regressors are group, time, its interaction and subject as a random factor..') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+  })
+```
+
+###### Just for the encephalitis group (so we can take into account the 4 sessions)
+```{r }
+summary(lme(abs(bias) ~ session, random = ~(1+session)|subject,
+              data = groupedSubjSes[groupedSubjSes$group == 'E',]))$tTable %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Linear mixed-effects model with data for encephalitis group only. The response is bias and regressor are the sessions and a random factor for subject.') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+
+anova(lme(abs(bias) ~ session, random = ~(1+session)|subject,
+            data = groupedSubjSes[groupedSubjSes$group == 'E',])) %>%
+    kable(digits = digits, booktabs = TRUE, escape = FALSE,
+          caption = 'Anova of a linear mixed-effects model with data for encephalitis group only. The response is bias and regressors are the sessions and a random factor for subject.') %>%
+      kable_styling(latex_options = "HOLD_position", 
+                  bootstrap_options = "striped", full_width = F)
+```
+
+### Precision
+
+```{r, fig.align='center', fig.height = 3, fig.cap = 'Precision by subject and group through time'}
+groupedSubjSes %>%
+  ggplot(aes(x = time, y = precision, color = group, group = subject)) +
+  geom_line(alpha = 0.3, show.legend = FALSE) +
+  stat_summary(fun.data = "mean_cl_boot", show.legend = FALSE,
+               position = position_dodge(width = 0.05), aes(group = group)) +
+  stat_summary(fun = mean, geom = "line", size = 1, show.legend = FALSE,
+               position = position_dodge(width = 0.05), aes(group = group)) +
+  scale_color_manual(values = colors) +
+  theme_minimal(base_size = 15) +
+  labs(x = Hmisc::label(data$time), y = "Precision", color =Hmisc:: label(data$group)) +
+  facet_wrap(~ group)
+```
+
+#### Modelling precision
+
+```{r eval = FALSE}
+rm(mod0, mod1, mod2, mod3, mod4)
+mod0 <- lme(precision ~ group * time, random = ~(1+time)|subject, data = groupedSubjSes)
+mod1 <- lme(precision ~ group * time, random = ~(1)|subject, data = groupedSubjSes)
+mod2 <- lm(precision ~ group * session, 
+           data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),])
+mod3 <- lme(precision ~ group * session, random = ~1|subject, 
+            data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),])
+mod4 <- lme(precision ~ group * session, random = ~(1+session)|subject,
+            data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),])
+
+mod0$sigma # best with continuous
+mod1$sigma
+summary(mod2)$sigma
+mod3$sigma
+mod4$sigma # best with categorical
+```
+
+
+##### Time as a continuous variable
+
+```{r}
+# remove -Inf or Inf values
+groupedSubjSes <- groupedSubjSes[!is.infinite(rowSums(groupedSubjSes[,c(4,5)])),]
+
+summary(lme(precision ~ group * time, random = ~(1)|subject, data = groupedSubjSes))$tTable %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Linear mixed-effects model where the response is precision and regressors are group, time, its interaction and subject as a random factor.') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+
+anova(lme(precision ~ group * time, random = ~(1)|subject, data = groupedSubjSes)) %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = "Anova for the linear mixed-effects model where the response is precision and regressors are group, time, its interaction and subject as a random factor..") %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+```
+
+##### Time as a categorical variable (session)
+
+```{r}
+summary(lme(precision ~ group * session, random = ~(1)|subject, 
+            data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),]))$tTable %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Linear mixed-effects model where the response is precision and regressors are group, session, its interaction and subject as a random factor..') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+
+anova(lme(precision ~ group * session, random = ~(1)|subject, 
+          data = groupedSubjSes[groupedSubjSes$session %in% c('S1', 'S4'),])) %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = "Anova for the linear mixed-effects model where the response is precision and regressors are group, session, its interaction and subject as a random factor..") %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+```
+
+###### Just for the encephalitis group (so we can take into account the 4 sessions)
+```{r}
+summary(lme(precision ~  session, random = ~(1+session)|subject, 
+            data = groupedSubjSes[groupedSubjSes$group == 'E',]))$tTable %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = 'Linear mixed-effects model with data for encephalitis group only. The response is the precision and regressors are the sessions and a random factor for subject.') %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+
+anova(lme(precision ~  session, random = ~(1+session)|subject, 
+          data = groupedSubjSes[groupedSubjSes$group == 'E',])) %>%
+  kable(digits = digits, booktabs = TRUE, escape = FALSE,
+        caption = "Anova for the linear mixed-effects model with data for encephalitis group only. The response is the precision and regressors are the sessions and a random factor for subject.") %>%
+    kable_styling(latex_options = "HOLD_position", 
+                bootstrap_options = "striped", full_width = F)
+```
