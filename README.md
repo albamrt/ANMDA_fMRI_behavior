@@ -10,4 +10,4 @@ Report in: https://albamrt.github.io/NMDA_fMRI_behavior/
 
 \* The files 'NMDAEvents.csv' and 'NMDAEventsProjecteAj-Treatment_DATA.csv' can be obtained from REDCap: the first one from exporting the instrument 'informacion demografica basica' and the second one from 'tratamiento' (if needed, rename files to have those exact names).
 
-\** The file 'behavior.csv' can be created by using the script 'concat_behavior.py' on the cluster. It concatenates the behavior files located in '/archive/albamrt/MRI/behaviour'.
+\** The file 'behavior.csv' can be created by using the script 'concat_behavior.py' on the cluster. It concatenates the behavior files located in '/archive/albamrt/MRI/behaviour' and saves the concatenated file in '/storage/albamrt/NMDA/MRI/'.
