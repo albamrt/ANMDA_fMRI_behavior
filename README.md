@@ -1,5 +1,5 @@
 # Report
-Report in: https://albamrt.github.io/NMDA_fMRI_behavior/
+Report in: https://albamrt.github.io/NMDA-MRI-behavior/
 
 # Instructions of usage:
 1. Download this repository.
